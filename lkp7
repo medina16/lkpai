@@ -1,0 +1,142 @@
+# Mengimpor seluruh isi module logic dan utils dari library AIMA Python
+from logic import *
+from utils import *
+
+# Mendefinisikan kelas untuk implementasi knowledge base yang berisi definite clause yang disusun menggunakan sintaks First Order Logic
+# Struktur: anteseden => konsekuen
+# Jika sentence yang dinyatakan bukan definite clause, tidak akan diterima sebagai bagian dari clause
+class FolKB(KB):
+    def __init__(self, initial_clauses=[]):
+        self.clauses = []
+        for clause in initial_clauses:
+            self.tell(clause)
+
+    def tell(self, sentence):
+        if is_definite_clause(sentence):
+            self.clauses.append(sentence)
+        else:
+            raise Exception("Not a definite clause: {}".format(sentence))
+
+    def ask_generator(self, query):
+        q = expr(query)
+        test_variables = variables(q)
+        answers = fol_bc_ask(self, q)
+        return sorted([dict((x, v) for x, v in list(a.items())
+                            if x in test_variables)
+                        for a in answers], key=repr)
+
+    def retract(self, sentence):
+        self.clauses.remove(sentence)
+
+    def fetch_rules_for_goal(self, goal):
+        return self.clauses
+    
+# Implementasi objek dari kelas FolKB bernama silsilah_kb
+# Untuk merepresentasikan silsilah keluarga pada soal
+# Logical statements dan rules dinyatakan dalam bentuk list string, lalu dikonversi ke dalam bentuk logical expression yang sesuai
+silsilah_kb = FolKB(
+    map(expr, [
+                # x adalah perempuan
+                'Perempuan(Margareth)','Perempuan(Sophia)','Perempuan(Elizabeth)','Perempuan(Catherine)','Perempuan(Camila)',
+                'Perempuan(Diana)','Perempuan(Anne)','Perempuan(Sarah)','Perempuan(Sophie)','Perempuan(Kate)','Perempuan(Zara)',
+                'Perempuan(Beatrice)','Perempuan(Eugenie)','Perempuan(Lady)',
+
+                # x adalah laki-laki
+                'Lakilaki(JamesI)','Lakilaki(CharlesI)','Lakilaki(Phillip)','Lakilaki(CharlesII)','Lakilaki(JamesII)',
+                'Lakilaki(Charles)','Lakilaki(Mark)','Lakilaki(Andrew)','Lakilaki(Edward)','Lakilaki(William)',
+                'Lakilaki(Hendry)','Lakilaki(Peter)',
+
+                # x dan y berpasangan (suami-istri)
+                'Berpasangan(JamesI, Margareth)','Berpasangan(CharlesI, Sophia)','Berpasangan(Elizabeth, Phillip)',
+                'Berpasangan(Charles, Camila)','Berpasangan(Charles, Diana)','Berpasangan(Mark, Anne)',
+                'Berpasangan(Andrew, Sarah)','Berpasangan(Edward, Sophie)','Berpasangan(William, Kate)',
+
+                # x (laki-laki) adalah orang tua dari y
+                'Ortu(JamesI, CharlesI)', 'Ortu(JamesI, Elizabeth)', 'Ortu(CharlesI, Catherine)', 'Ortu(CharlesI, CharlesII)', 'Ortu(CharlesI, JamesII)',
+                'Ortu(Phillip, Charles)', 'Ortu(Phillip, Anne)', 'Ortu(Phillip, Andrew)','Ortu(Phillip, Edward)','Ortu(Charles, William)',
+                'Ortu(Charles, Hendry)','Ortu(Mark, Peter)','Ortu(Mark, Zara)','Ortu(Andrew, Beatrice)','Ortu(Andrew, Eugenie)','Ortu(Edward, Lady)',
+
+                # x (perempuan) adalah orang tua dari y
+                'Ortu(Margareth, CharlesI)', 'Ortu(Margareth, Elizabeth)', 'Ortu(Sophia, Catherine)', 'Ortu(Sophia, CharlesII)', 'Ortu(Sophia, JamesII)',
+                'Ortu(Elizabeth, Charles)', 'Ortu(Elizabeth, Anne)', 'Ortu(Elizabeth, Andrew)','Ortu(Elizabeth, Edward)','Ortu(Diana, William)',
+                'Ortu(Diana, Hendry)','Ortu(Anne, Peter)','Ortu(Anne, Zara)','Ortu(Sarah, Beatrice)','Ortu(Sarah, Eugenie)','Ortu(Sophie, Lady)',
+
+                # Definisi Anak
+                'Ortu(a, b) ==> Anak(b, a)', 
+                # Definisi Ibu
+                '(Ortu(m, x) & Perempuan(m)) ==> Ibu(m, x)', 
+                # Definisi Ayah
+                '(Ortu(f, x) & Lakilaki(f)) ==> Ayah(f, x)',
+                # Definisi Saudara Kandung
+                '(Ayah(a, x) & Ayah(a, y)) ==> SaudaraKandung(x, y)', 
+                # Definisi Kakak Perempuan
+                '(SaudaraKandung(a, b) & Perempuan(a)) ==> Kakakperempuan(a, b)', 
+                # Definisi Abang
+                '(SaudaraKandung(a, b) & Lakilaki(a)) ==> Abang(a, b)', 
+
+                # Definisi Ibu Tiri
+                '(Berpasangan(x,y) & Berpasangan (x, z) & Ayah(x,a) & Ibu(y,a) & Perempuan(z)) ==> Ibutiri(z,a)',
+                # Definisi Tante
+                '(SaudaraKandung(x, y) & Ortu(y, a) & Perempuan(x)) ==> Tante(x, a)',
+                # Definisi Tante Ipar
+                '(SaudaraKandung(x, y) & Ortu(y, a) & Berpasangan(x,z) & Perempuan(z)) ==> Tanteipar(z, a)',
+                # Definisi Om (Paman)
+                '(SaudaraKandung(x, y) & Ortu(y, a) & Lakilaki(x)) ==> Om(x, a)',
+                # Definisi Paman Ipar
+                '(SaudaraKandung(x, y) & Ortu(y, a) & Berpasangan(x,z) & Lakilaki(z)) ==> Pamanipar(z, a)',
+
+                # Definisi Sepupu
+                '(Tante(x,a) & Ortu(x,b)) ==> Sepupu(a,b)',
+                '(Om(x,a) & Ortu(x,b)) ==> Sepupu(a,b)',
+
+                # Definisi Tante Sepupu
+                '(Sepupu(x, y) & Ortu(y, a) & Perempuan(x)) ==> Tantesepupu(x, a)',
+                # Definisi Kakek
+                '(Ayah(x,y) & Ortu(y,z)) ==> Kakek(x,z)',
+                # Definisi Nenek
+                '(Ibu(x,y) & Ortu(y,z)) ==> Nenek(x,z)',
+
+                # Definisi Kakek Buyut
+                '(Ayah(x,y) & Kakek(y,z)) ==> Kakekbuyut(x,z)',
+                '(Ayah(x,y) & Nenek(y,z)) ==> Kakekbuyut(x,z)',
+
+                # Definisi Nenek Buyut
+                '(Ibu(x,y) & Kakek(y,z)) ==> Nenekbuyut(x,z)',
+                '(Ibu(x,y) & Nenek(y,z)) ==> Nenekbuyut(x,z)',
+
+                # Definisi Cucu
+                'Kakek(x,y) ==> Cucu(y,x)',
+                'Nenek(x,y) ==> Cucu(y,x)',
+
+                # Definisi Cicit Perempuan
+                '(Kakekbuyut(x,y) & Perempuan(y)) ==> Cicitperempuan(y,x)',
+                '(Nenekbuyut(x,y) & Perempuan(y)) ==> Cicitperempuan(y,x)',
+
+                # Definisi Cicit Laki-laki
+                '(Kakekbuyut(x,y) & Lakilaki(y)) ==> Cicitlaki(y,x)',
+                '(Nenekbuyut(x,y) & Lakilaki(y)) ==> Cicitlaki(y,x)'
+  
+                ]))
+
+# Mencetak jawaban untuk soal nomor 1 - 20
+print("===== JAWABAN PERTANYAAN =====")
+print("[1 ] \t" + repr(silsilah_kb.ask_generator('Ayah(GeorgeI, CharlesI)')))
+print("[2 ] \t" + repr(silsilah_kb.ask_generator('Ayah(x, CharlesI)')))
+print("[3 ] \t" + repr(silsilah_kb.ask_generator('Ibu(x, Hendry)')))
+print("[4 ] \t" + repr(silsilah_kb.ask_generator('Anak(x, Charles)')))
+print("[5 ] \t" + repr(silsilah_kb.ask_generator('Om(Andrew, William)')))
+print("[6 ] \t" + repr(silsilah_kb.ask_generator('Tante(x, Peter)')))
+print("[7 ] \t" + repr(silsilah_kb.ask_generator('Sepupu(Zara, x)')))
+print("[8 ] \t" + repr(silsilah_kb.ask_generator('Nenek(x, William)')))
+print("[9 ] \tHendry:" + repr(silsilah_kb.ask_generator('Nenek(Elizabeth, Hendry)')) + ", William:" + repr(silsilah_kb.ask_generator('Nenek(Elizabeth, William)')))
+print("[10] \t" + repr(silsilah_kb.ask_generator('Kakek(x, Peter)')))
+print("[11] \t" + repr(silsilah_kb.ask_generator('Ibutiri(x, William)')))
+print("[12] \t" + repr(silsilah_kb.ask_generator('Abang(x, Diana)')))
+print("[13] \t" + repr(silsilah_kb.ask_generator('Kakakperempuan(x, Andrew)')))
+print("[14] \t" + repr(silsilah_kb.ask_generator('Abang(x, JamesII)')))
+print("[15] \t" + repr(silsilah_kb.ask_generator('Tante(Sarah, Peter)')))
+print("[16] \t" + repr(silsilah_kb.ask_generator('Nenekbuyut(x, Hendry)')))
+print("[17] \t" + repr(silsilah_kb.ask_generator('Omipar(x, Charles)')))
+print("[18] \t" + repr(silsilah_kb.ask_generator('Ibu(Diana, Hendry)')))
+print("[19] \t" + repr(silsilah_kb.ask_generator('Sepupu(x, Hendry)')))
+print("[20] \t" + repr(silsilah_kb.ask_generator('Cicitperempuan(x, Elizabeth)')))
